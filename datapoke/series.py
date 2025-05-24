@@ -1,12 +1,13 @@
-from utils import CoerceTypes
-
+from datapoke.enums import CoerceTypes
+from datapoke.utils import force_boolcast
 
 import numpy as np
 import pandas as pd
 
 
 import functools
-from typing import Callable, Tuple
+from typing import Callable, Tuple, Union
+
 
 
 class PokeColumn:
@@ -102,7 +103,7 @@ class PokeColumn:
             "n_nulls": self.nullcount,
             "unique_val": self.uniquevalues,
             "most_freq_vals": self.series.value_counts().iloc[:5].index.tolist(),
-            "dtypes": [t.__name__ for t in self.dtypes.index],
+            "dtypes": {t.__name__ for t in self.dtypes.index},
             "n_types":  self.ntypes
         }
         if detailed:
@@ -112,7 +113,7 @@ class PokeColumn:
         else:
             return output
 
-    def coerce_dtypes(self,target_dtype: Union[CoerceTypes, Callable[[object], object]], copy: bool = False) -> Tuple[pd.Series, pd.Index, list]:
+    def coerce_dtypes(self,target_dtype: Union[CoerceTypes, Callable[[object], object]], copy: bool = False, aggresive_bools: bool = False) -> Tuple[pd.Series, pd.Index, list]:
 
         """
         Attempt to coerce the column to a specified data type, handling failures safely.
@@ -175,6 +176,8 @@ class PokeColumn:
             try:
                 if target_dtype in ["num","datetime"]:
                     coerced = converter(self.series, errors="coerce")
+                elif target_dtype == "boolean" and aggresive_bools:
+                        coerced = self.series.map(aggresive_bools).astype("boolean")
                 else:
                     coerced = converter(self.series)
 
@@ -185,7 +188,7 @@ class PokeColumn:
         #need to calculate and return top errors before overwriting in place if copy = False:
         top_errors = failed.value_counts().iloc[:5].index.to_list()
         if not copy:
-            self.series = coerced
+            self.series[:] = coerced.values
         return coerced, failed.index, top_errors
 
     # Private methods ----------------

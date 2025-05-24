@@ -2,10 +2,11 @@ import pandas as pd
 import logging
 from tabulate import tabulate
 from typing import Literal, Union, Tuple, Mapping, Any, Callable
-from enum import Enum
 import functools
-import numpy as np
-import inspect
+import os
+import warnings
+from series import PokeColumn
+from utils import CoerceTypes
 
 logging.basicConfig(level = logging.INFO)
 
@@ -17,156 +18,6 @@ testpath_utf8sig = r"Test data\load tests\utf8_sig_break_utf8.csv"
 testpath_inv = r"Test data\load tests\totally_invalid_encoding.csv"
 testpath_messydtypes = r"Test data\load tests\messy_HR_data.csv"
 
-
-
-class CoerceTypes(str, Enum):
-    NUM = "num"
-    DATETIME = "datetime"
-    BOOL = "bool"
-    STRING = "string"
-
-    @classmethod
-    def values(cls) -> set[str]:
-        return {v.value for v in cls}
-    
-    @classmethod
-    def is_valid(cls, value) -> bool:
-        if value in cls.__members__.values():
-            return True
-        if callable(value):
-            sig = inspect.signature(value)
-            params = sig.parameters.values()    
-            positional_args = [p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
-            return len(positional_args) == 1
-        return False
-
-    
-    @classmethod
-    def validate_schema(cls, schema: dict, df: pd.DataFrame) -> None:
-        unexpected_keys = set(schema.keys()).difference(df.columns)
-        if unexpected_keys:
-            raise KeyError(f"The following columns were present in the schema but not the dataframe: {unexpected_keys}")
-
-        invalid_target = {k: v for k, v in schema.items() if not cls.is_valid(v)}
-        if invalid_target:
-            raise ValueError(f"Unsupported type mappings in schema: {invalid_target}. Currently supported types are: {cls.values()} or a callable with one argument")
-        
-    #todo: write testing for these
-
-def check_bom(filepath):
-    with open(filepath, "rb") as f:
-        start = f.read(4)
-        if start.startswith(b'\xef\xbb\xbf'):
-            return "utf-8-sig"
-        elif start.startswith(b'\xff\xfe'):
-            return "utf-16-le"
-        elif start.startswith(b'\xfe\xff'):
-            return "utf-16-be"
-        else:
-            return None
-    
-def nullonfailure_wrapper(func: Callable[[object],[object]]) -> Callable [[object], [object]]:
-    """Wraps a user defined function to return np.nan if there is an error.
-
-    Args:
-        func (Callable[[object],[object]]): Any function that accepts and returns a single argument.
-
-    Returns:
-        Callable [[object], [object]]: Wrapped version of func.
-    """
-    @functools.wraps(func)
-    def wrapper(x):
-        try:
-            return func(x)
-        except:
-            return np.nan
-    return wrapper
-
-
-def load_csv(filepath, encoding = None, **kwargs):  
-    """Load a csv. Will try specified encoding (if supplied), and common fallback options, including BOM type encodings.
-
-    Parameters
-    ----------
-    filepath: str or Path
-        Path to CSV file.
-    encoding: str, optional
-        Encoding to try first (eg. utf-8), if not provided, a range of common encodings will be tried (including BOM encodings).
-    **kwargs: dict, optional
-        Additional arguments to pass to `pandas.read_csv()` (eg. `skiprows`, `header`).
-
-    Returns
-    -------
-    DataFrame
-        Loaded pandas DataFrame.
-
-    Raises
-    -------
-    ValueError
-        If none of the attempted encodings are successful.
-    UnicodeDecodeError
-        Re-raised as last known decode error if all encoding attempts fail.
-
-    Notes
-    -----
-    Encodings attempted are:
-    1. User supplied `encoding` argument (if provided).
-    2. Encoding information from BOM ('utf-8-sig', 'utf-16-le', 'utf-16-be').
-    3. Standard fallbacks: ('utf-8', 'cp1252', 'latin1').
-
-    Will provide warnings if BOMs are detected that do not match the supplied encoding, or if another fallback is used.
-
-    Examples
-    --------
-
-    >>> df = load_csv("data.csv")
-    >>> df = load_csv("data.csv", encoding = "latin1")
-    >>> df = load_csv("data.csv", skiprows = 3)
-    """
-    
-    #setup encodings to try and add the user specified one if provided:
-    encodings_totry = []
-    if encoding:
-        encodings_totry.append(encoding)
-
-    #check for bom type csv encodings and add if needed:
-    bomtype = check_bom(filepath)
-    if bomtype:
-        if encoding != bomtype:
-            logging.warning(f"{bomtype} bom detected, will try this encoding after any specified encoding")
-            encodings_totry.append(bomtype)
-    
-    #add other standard encodings if they are not already there:
-    for enc in ["utf-8", "latin1", "cp1252"]:
-        if enc not in encodings_totry:
-            encodings_totry.append(enc) 
-    
-
-    fallback_needed = False
-    last_exception = False
-
-
-    for enc in encodings_totry:
-        try:
-            df = pd.read_csv(filepath, encoding = enc, **kwargs)
-            if fallback_needed and encoding:
-                logging.warning(f"{filepath} could not be loaded with {encoding}, was loaded with {enc} as a fallback")
-            else:
-                logging.info(f"{filepath} loaded with encoding: {enc}")
-            return df
-        except UnicodeDecodeError as e:
-            if enc == encoding:
-                fallback_needed = True
-            last_exception = e
-    
-    raise ValueError( 
-        f"Tried the following encodings: {encodings_totry}, was unable to decode {filepath}."
-    ) from last_exception
-
-    #todo: tests to add:
-    #various encoding tests
-    #gibberish user supplied encoding
-    #passthrough of **kwargs
 
 
 def qual_col(column):
@@ -186,7 +37,7 @@ def qual_col(column):
     return output
 
 
-    #todo: tests to add: error check on dataframe rather than series
+    #TODO: tests to add: error check on dataframe rather than series
 
 def qual_frame(df):
     output = []
@@ -194,90 +45,33 @@ def qual_frame(df):
         output.append(check_colqual(df[col]))
     return pd.DataFrame(output)
 
-class PokeColumn:
-    def __init__(self,series):
-        if not isinstance(series, pd.Series):
-            raise TypeError(f"Expected a pandas series, but got {type(series).__name__}")
-        self.series = series
-        self.name = self.series.name
-
-    @property    
-    def nullcount(self):
-        return self.series.isna().sum()
-    
-    @property
-    def uniquevalues(self):
-        return len(self.series.drop_duplicates())
-
-    @property
-    def dtypes(self):
-        return self.series.dropna().map(type).value_counts()
-
-    @property
-    def ntypes(self):
-        return len(self.dtypes)
-
-
-
-    def summary(self, detailed = True, display = True):
-        output = {
-            "name": self.name,
-            "n_nulls": self.nullcount,
-            "unique_val": self.uniquevalues,
-            "most_freq_vals": self.series.value_counts().iloc[:5].index.tolist(),
-            "dtypes": [t.__name__ for t in self.dtypes.index],
-            "n_types":  self.ntypes
-        }
-        if detailed:
-            output.update({"n_" + key.__name__: value for key, value in self.dtypes.items()})
-        if display:
-            return pd.Series(output)
-        else:
-            return output
-    
-    def coerce_dtypes(self,target_dtype, copy = False):
-        if isinstance(target_dtype, Callable):
-            coerced = self.series.map(nullonfailure_wrapper(target_dtype)) 
-        else:
-            converter = {
-                "num": pd.to_numeric,
-                "datetime": pd.to_datetime,
-                "bool": lambda x: x.astype("boolean"), 
-                "string": lambda x: x.astype("string")
-            }.get(target_dtype)
-
-            if converter is None:
-                raise ValueError(f"Unsupported type: {target_dtype}. Currently supported types are: num, datetime, bool, string.")
-
-            try:
-                if target_dtype in ["num","datetime"]:
-                    coerced = converter(self.series, errors="coerce")
-                else:
-                    coerced = converter(self.series)
-
-            except Exception as e:
-                raise ValueError(f"Failed to coerce column '{self.name}' to {target_dtype}: {e}")
-
-        failed = self.series[coerced.isna() & self.series.notna()]
-        top_errors = failed.value_counts().iloc[:5].index.to_list()
-        if not copy:
-            self.series = coerced
-        return coerced, failed.index, top_errors
-        #todo: add handling for ints vs. floats
-        #todo: add handling for unusual pandas categories
-        #todo: add docstring
-        #todo: optimise failed memory usage a bit more
-    
-    
-    
-
-    #write a __repr__ function
-    #optimise duplicate function calls
-    #add sampling
-    #add caching
-
-
 class PokeFrame:
+    """
+    A wrapper around a pandas DataFrame that provides lightweight data profiling,
+    safe coercion, and structural integrity checks.
+
+    PokeFrame is designed to support early data ingestion and quality assurance
+    workflows. It allows summary inspection of all columns, attempts schema coercion
+    with error tracking and quarantining, and provides integrity validation for
+    downstream operations.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The dataframe to wrap and inspect.
+    safe_mode : bool, optional
+        If True (default), tracks the index at load time to validate changes and
+        raise warnings when row order or indexing might invalidate assumptions.
+    """
+    #TODO: add testing for single column data - ie. what if you throw a series in to pokeframe
+    #TODO: different output types - ie. not just console
+    #TODO: add docstrings
+    #TODO: finish typing
+    #TODO: integrate read_csv
+    #TODO: lookat pypi setup
+    #TODO: more info on null distribution
+    #TODO: add testing
+
     def __init__(self, df: pd.DataFrame, safe_mode: bool = True):
         if not isinstance(df, pd.DataFrame):
             raise TypeError(f"Expected a pandas dataframe, but got {type(df).__name__}")
@@ -289,14 +83,64 @@ class PokeFrame:
             self._index_hash = self._hash_index(df.index)
 
     def __getitem__(self,col_name):
-        return self.columns[col_name]
+        """
+        Access the wrapped PokeColumn for a specific column name.
 
-    def _hash_index(self, index):
-        return hash(tuple(index))
+        Parameters
+        ----------
+        col_name : str
+            Name of the column in the underlying dataframe.
+
+        Returns
+        -------
+        PokeColumn
+            The corresponding PokeColumn object.
+        """
+        return self.columns[col_name]
+    
+    def __repr__(self):
+        return f"<PokeFrame: {len(self.df)} rows, {len(self.columns)} columns>"
+    
+    def __len__(self):
+        return len(self.df)
+
+
+    # Properties -----------------------------
+    @property
+    def index_hash(self):
+        """Hash of dataframe index."""
+        return self._index_hash
 
     @property
+    def quarantine_mask(self):
+        """Index mask for quarantined rows."""
+        if self._quarantine_mask is None:
+            self._quarantine_mask = self.df.index
+        return self._quarantine_mask     
+    
+    @property
     def safe_mode(self):
+        """Enables tests to check underlying dataframe index hasn't been modified (unimplemented)."""
+        #TODO: implement checks
         return self._safe_mode
+    
+    @property
+    def schema(self):
+        """
+        Return the pandas dtypes of the underlying dataframe.
+
+        Returns
+        -------
+        dict
+            Dictionary of column names and their dtypes.
+        """
+        return self.df.dtypes.to_dict()
+
+    # Setters ----------------------------------
+
+    @quarantine_mask.setter
+    def quarantine_mask(self, new_mask):
+        self._quarantine_mask = new_mask
     
     @safe_mode.setter
     def safe_mode(self, newval):
@@ -304,40 +148,67 @@ class PokeFrame:
             warnings.warn("Changing safe_mode after initialisation is not advised - integrity checks may not work as expected", RuntimeWarning)
             #if safe mode is turned on, recompute the index hash:
             if newval == True:
-                self._index_hash = self._hash_index(df.index)
+                self._index_hash = self._hash_index(self.df.index)
         self._safe_mode = newval 
 
-    @property
-    def index_hash(self):
-        return self._index_hash
-
-    def validate_index(self) -> None:
-        if self._safe_mode and self._hash_index(self.df.index) != self._index_hash:
-            raise RuntimeError("Dataframe index has changed since initialisation, methods involving row selection cannot be completed unless the index is reverted or the dataframe is reloaded")
-
-
-    def summary(self):
-        output = []
-        for column in self.columns.values():
-            output.append(column.summary(detailed = False))
-        return pd.DataFrame(output)
-
-    @property
-    def schema(self):
-        return df.dtypes.to_dict()
-
-    @property
-    def quarantine_mask(self):
-        if self._quarantine_mask is None:
-            self._quarantine_mask = self.df.index
-        return self._quarantine_mask
     
-    @quarantine_mask.setter
-    def quarantine_mask(self, new_mask):
-        self._quarantine_mask = new_mask
-    
+
+
+    #Public methods --------------
+
     def coerce_dtypes(self, schema: dict[Any, Union[CoerceTypes, Callable[[object], object]]], copy: bool = True, quarantine: Union[bool,Literal['detail']] = True) -> Tuple[pd.DataFrame, dict]:
-        #todo: This will create a sliced dataframe so needs to reset the index hash
+
+        """
+        Attempt to coerce columns in the dataframe to specified types, with error handling and optional quarantining.
+
+        Parameters
+        ----------
+        schema : dict
+            A mapping of column names to coercion targets. Each value must be one of:
+            - A `CoerceTypes` enum value ('num', 'datetime', 'bool', 'string'),
+            - A callable that accepts a single value and returns the coerced version.
+        copy : bool, optional
+            If True (default), operate on a copy of the dataframe and return it.
+            If False, coercions are performed in-place on the original dataframe. If quarantine
+            is also False, failed coercions will be written to the dataframe as NaN,
+            otherwise they will be left as the original values.
+        quarantine : bool or {'detail'}, optional
+            If True (default), rows with failed conversions are removed from the result
+            and returned separately. If 'detail', adds a column noting which columns failed.
+            The quarantine_mask property will also be updated to track failed coercions.
+            If False, all rows are retained regardless of coercion outcome.
+
+        Returns
+        -------
+        new_df : pd.DataFrame
+            The coerced dataframe, potentially with problematic rows removed if quarantining is enabled.
+        output : dict
+            A dictionary containing:
+            - 'summary': pd.DataFrame with per-column coercion results
+            - 'coerce_errors': dict of column -> failed row indices
+            - 'quarantine' (if enabled): pd.DataFrame of quarantined rows
+
+        Raises
+        ------
+        KeyError
+            If any columns in the schema are not found in the dataframe.
+        ValueError
+            If a coercion function or type string is unsupported.
+
+        Notes
+        -----
+        - Failed conversions are treated as NaNs and tracked.
+        - Top 5 failing values per column are included in the output summary.
+        - If `safe_mode` is enabled, index integrity is checked before applying masks.
+        - Currently all numeric coercions default to float to preserve nullability.
+        - If all coercions successful, output["summary"].loc["total_errors","count"] will == 0.
+        """
+        #TODO: This will create a sliced dataframe so needs to reset the index hash
+        #TODO: This creates a quarantine mask - decide logic for overwrites and sequential calls
+        #TODO: checks helper function
+        #TODO: check index hash every time we use a mask, but don't if we are just using a schema
+
+        #region Validation and variable setup --------------------------
         CoerceTypes.validate_schema(schema, self.df)
 
         unexpected_keys = set(schema.keys()).difference(self.columns)
@@ -349,11 +220,19 @@ class PokeFrame:
         else:
             new_df = self.df
         startlen = len(new_df)
+        #problemrows will be a dictionary of the indexes of failed coercions from each column
         problemrows = {}
+        #c_errors tracks the top errors from each column (can't retrieve later if copy == quarantine == False)
         c_errors = {}
         
+        #endregion end of: Validation and variable setup
+
+        #region Try coercions ------------------------------------------
+
         for col, dtype in schema.items():
-            coerced, failed, top_errors = self.columns[col].coerce_dtypes(dtype,copy = copy)
+            #coerce_dtypes on pokecolumn is only called with copy = False if copy and quarantine are false
+            #on pokeframe.coerce_dtypes - this is the only case where we want to modify the underlying values.
+            coerced, failed, top_errors = self.columns[col].coerce_dtypes(dtype,copy = (copy or quarantine))
             new_df[col] = coerced
             if not failed.empty:
                 logging.warning(f"Column {col} encountered {len(failed)} errors while converting to {dtype}, check second output for more info")
@@ -362,13 +241,18 @@ class PokeFrame:
 
 
         outdict = {"summary": None, "coerce_errors": problemrows}
+        #qindex is the index of any coercion errors
         qindex = functools.reduce(pd.Index.union, problemrows.values()) if problemrows else []
 
-        #handle coercion failures:
-        if quarantine:
-            if problemrows:                
+        #endregion end of: Try coercions
+
+        #region Handle coercion failures -------------------------------
+
+        #   region Setup quarantine output if needed--------------------
+        if quarantine and problemrows:                
+                #qdf isn't a copy - so should be efficient, only needed for function return
                 qdf = self.df.loc[qindex]
-                new_df.drop(index=qindex, inplace = True)
+                #write an extra column in the output if detail is enabled:
                 if quarantine == "detail":
                     if "coerce_errors" in self.df.columns:
                         logging.warning("Column 'corece_errors' already exists in the data, and will be overwritten in the quarantine")
@@ -376,19 +260,41 @@ class PokeFrame:
                     for k, v in problemrows.items():
                         qdf.loc[v, "coerce_errors"] = qdf.loc[v, "coerce_errors"].map(lambda x: ", ".join([x, k]) if x else k)
 
-
                 outdict["quarantine"] = qdf
+        else:
+            #add a 0 length dataframe of the same structure for consistency, even if quarantine is not set or there are no errors
+            outdict["quarantine"] = pd.DataFrame(columns = new_df.columns)
+
+        if quarantine:
+            #set quarantine mask if quarantine != False
+            #TODO: consider what we do if there's already a quarantine mask
+            self.quarantine_mask = new_df.index.isin(qindex)
+
+        #   endregion: setup quarantine output if needed
+
+        #   region handle base df --------------------------------------
+
+        if copy:
+            #always want to drop coercion errors from output in this case:
+            new_df.drop(index=qindex, inplace = True)
+        else:
+            if quarantine:
+                #need to use the mask to update new_df
+                None
             else:
-                outdict["quarantine"] = pd.DataFrame(columns = new_df.columns)
+                #should be handled by column level logic...
+                None
+
             
 
 
-
+        #region Setup outputs ------------------------------------------
 
         #build a summary output:
         od = {
             "total_rows": ["",startlen, ""],
-            "successfully coerced": ["",startlen - len(qindex),""]
+            "successfully coerced": ["",startlen - len(qindex),""],
+            "total_errors": ["", len(qindex), ""]
         }
         for sk, sv in schema.items():
             if sk not in problemrows:
@@ -396,40 +302,176 @@ class PokeFrame:
             else:
                 errs = [len(problemrows[sk]), c_errors[sk]]
             convname = "func: "+sv.__name__ if isinstance(sv,Callable) else sv
-            od.update({"col_" + sk: [convname] + errs})
-        outdict["summary"] = pd.DataFrame.from_dict(od, orient= "index", columns = ["covert_to","count/errors", "most_freq_errors"])
+            od.update({"colerr_" + sk: [convname] + errs})
+        outdict["summary"] = pd.DataFrame.from_dict(od, orient= "index", columns = ["covert_to","count", "most_freq_errors"])
         
+        #endregion: setup outputs
         return new_df, outdict
-        #currently returns the coerced frame and a dict holding the problem rows dictionary and the quarantined frame
-        
-        #poke coerce issues
-
-        #todo: checks helper function
-        #todo: check index hash every time we use a mask, but don't if we are just using a schema
 
 
+    def summary(self) -> pd.DataFrame:
+        """
+        Return a summary of all columns in the dataframe.
 
+        Returns
+        -------
+        pd.DataFrame
+            A dataframe where each row summarizes a column's quality metrics.
+        """
+        output = []
+        for column in self.columns.values():
+            output.append(column.summary(detailed = False))
+        return pd.DataFrame(output)
+
+
+    # Private methods -------------------
+
+    @staticmethod
+    def _hash_index(index: pd.Index) -> int:
+        """
+        Compute a hash of the dataframe index.
+
+        Used for integrity checking when `safe_mode` is enabled.
+
+        Parameters
+        ----------
+        index : pd.Index
+            The dataframe index to hash.
+
+        Returns
+        -------
+        int
+            A hash value for the index.
+        """
+        return hash(tuple(index))
     
+    @staticmethod
+    def _check_bom(filepath):
+        with open(filepath, "rb") as f:
+            start = f.read(4)
+            if start.startswith(b'\xef\xbb\xbf'):
+                return "utf-8-sig"
+            elif start.startswith(b'\xff\xfe'):
+                return "utf-16-le"
+            elif start.startswith(b'\xfe\xff'):
+                return "utf-16-be"
+            else:
+                return None
+            
+    def _validate_index(self) -> None:
+        """
+        Ensure that the dataframe index has not changed if safe_mode is enabled.
 
-    #todo: add handling for single column data 
-    #todo: different output types
-    #todo: add docstrings
-    #todo: decide on final output for coercion mechanism - most likely will be quarantine problem records, can also include current functionality of coerce everything as copy
-    #todo: finish typing
+        Raises
+        ------
+        RuntimeError
+            If the index hash differs from its original value.
+        """
+        #TODO: add tests for this
+        if self._safe_mode and self._hash_index(self.df.index) != self._index_hash:
+            raise RuntimeError("Dataframe index has changed since initialisation, methods involving row selection cannot be completed unless the index is reverted or the dataframe is reloaded")
+    
+    #Static & Class methods -------------
+
+    @classmethod
+    def load_csv(cls, filepath: Union[str, os.PathLike], encoding: str = None, safe_mode: bool = True, **kwargs):  
+        """Load a csv. Will try specified encoding (if supplied), and common fallback options, including BOM type encodings.
+
+        Parameters
+        ----------
+        filepath: str or Path
+            Path to CSV file.
+        encoding: str, optional
+            Encoding to try first (eg. utf-8), if not provided, a range of common encodings will be tried (including BOM encodings).
+        **kwargs: dict, optional
+            Additional arguments to pass to `pandas.read_csv()` (eg. `skiprows`, `header`).
+
+        Returns
+        -------
+        DataFrame
+            Loaded pandas DataFrame.
+
+        Raises
+        -------
+        ValueError
+            If none of the attempted encodings are successful.
+        UnicodeDecodeError
+            Re-raised as last known decode error if all encoding attempts fail.
+
+        Notes
+        -----
+        Encodings attempted are:
+        1. User supplied `encoding` argument (if provided).
+        2. Encoding information from BOM ('utf-8-sig', 'utf-16-le', 'utf-16-be').
+        3. Standard fallbacks: ('utf-8', 'cp1252', 'latin1').
+
+        Will provide warnings if BOMs are detected that do not match the supplied encoding, or if another fallback is used.
+
+        Examples
+        --------
+
+        >>> df = load_csv("data.csv")
+        >>> df = load_csv("data.csv", encoding = "latin1")
+        >>> df = load_csv("data.csv", skiprows = 3)
+        """
+        
+        #TODO: tests to add:
+        #various encoding tests
+        #gibberish user supplied encoding
+        #passthrough of **kwargs
+
+        #setup encodings to try and add the user specified one if provided:
+        encodings_totry = []
+        if encoding:
+            encodings_totry.append(encoding)
+
+        #check for bom type csv encodings and add if needed:
+        bomtype = cls._check_bom(filepath)
+        if bomtype:
+            if encoding != bomtype:
+                logging.warning(f"{bomtype} bom detected, will try this encoding after any specified encoding")
+                encodings_totry.append(bomtype)
+        
+        #add other standard encodings if they are not already there:
+        for enc in ["utf-8", "latin1", "cp1252"]:
+            if enc not in encodings_totry:
+                encodings_totry.append(enc) 
+        
+
+        fallback_needed = False
+        last_exception = False
 
 
-df = load_csv(testpath_lat1,encoding="utf-8")
-df = load_csv(testpath_messydtypes)
+        for enc in encodings_totry:
+            try:
+                df = pd.read_csv(filepath, encoding = enc, **kwargs)
+                if fallback_needed and encoding:
+                    logging.warning(f"{filepath} could not be loaded with {encoding}, was loaded with {enc} as a fallback")
+                else:
+                    logging.info(f"{filepath} loaded with encoding: {enc}")
+                return cls(df, safe_mode= safe_mode)
+            except UnicodeDecodeError as e:
+                if enc == encoding:
+                    fallback_needed = True
+                last_exception = e
+        
+        raise ValueError( 
+            f"Tried the following encodings: {encodings_totry}, was unable to decode {filepath}."
+        ) from last_exception
 
-headers = df.columns.tolist()
-
-inferred_types = df.dtypes.to_dict()
 
 
-logging.info(inferred_types)
 
 
-df2 = PokeFrame(df)
+
+
+#df = load_csv(testpath_lat1,encoding="utf-8")
+#df = load_csv(testpath_messydtypes)
+
+
+
+
+df2 = PokeFrame.load_csv(testpath_messydtypes)
 
 print(df2[df2.df.columns[2]].summary())
 print(df2.summary())

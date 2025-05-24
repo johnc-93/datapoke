@@ -21,6 +21,15 @@ Perhaps two functions, one to actually convert and the other to test & return is
 
 Ideally we can save a schema once finalised and create an inspection pipeline.
 
+### What happens if a user wants to make sequential coerce calls?
+
+We keep track of a single master dataframe, with a quarantine mask which flags problem records.
+
+Proposed usage would be to apply "final" transformations in place with quarantine enabled. This would mean:
+1. self.df always has the "best" non failed version of data
+2. failed data is also present, but has a corresponding entry in the quarantine mask
+3. if 
+
 
 
 ## Long list considerations:

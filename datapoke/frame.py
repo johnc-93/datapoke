@@ -46,7 +46,7 @@ class PokeFrame:
         if not isinstance(df, pd.DataFrame):
             raise TypeError(f"Expected a pandas dataframe, but got {type(df).__name__}")
         self.df = df
-        self.columns = {col_name: PokeColumn(df[col_name]) for col_name in df.columns}
+        self.columns = {col_name: PokeColumn(df, col_name) for col_name in df.columns}
         self._quarantine_mask = []
         self._safe_mode = safe_mode
         self._active_mask = None

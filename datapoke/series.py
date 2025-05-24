@@ -212,7 +212,7 @@ class PokeColumn:
         #need to calculate and return top errors before overwriting in place if copy = False:
         top_errors = failed.value_counts().iloc[:5].index.to_list()
         if not copy:
-            self.series = coerced.values
+            self.series = coerced
         return coerced, failed.index, top_errors
     #endregion public methods
 

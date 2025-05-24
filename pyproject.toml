@@ -1,0 +1,25 @@
+[project]
+name = "datapoke"
+version = "0.0.1"
+description = "Data loading and profiling helper for exploratory analysis"
+authors = [
+    {name = "JC",email = "johnc939393@gmail.com"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pandas (>=2.2.3,<3.0.0)",
+    "numpy (>=2.2.6,<3.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.5"
+ruff = "^0.11.11"
+black = "^25.1.0"
+

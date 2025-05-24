@@ -1,6 +1,6 @@
-ID,Name,Age,Salary,JoinDate,Department
-1,José,28,50000,2015-06-23,Sales
-2,Zoë,35,,2012-09-17,Marketing
-3,李雷,30,70000,2018-01-05,
-4,Müller,,55000,2016-11-30,Engineering
-5,O'Connor,45,80000,,HR
+ID,Name,Age,Salary,JoinDate,Department,"True"
+1,José,28,50000,2015-06-23,Sales,"False"
+2,Zoë,35,,2012-09-17,Marketing,"True"
+3,李雷,30,70000,2018-01-05,,
+4,Müller,four,55000,2016-11-30,Engineering,"True"
+5,O'Connor,45,80000,,HR,"False"

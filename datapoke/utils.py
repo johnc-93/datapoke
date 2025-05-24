@@ -40,3 +40,5 @@ def force_boolcast(x: Any) -> Union[bool,float]:
         return bool(x)
     else:
         return np.nan
+
+#def force_datetime(x: Any) -> x:pd.DatetimeIndex

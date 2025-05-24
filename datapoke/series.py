@@ -6,7 +6,7 @@ import pandas as pd
 
 
 import functools
-from typing import Callable, Tuple, Union
+from typing import Callable, Tuple, Union, Hashable
 
 
 
@@ -50,17 +50,26 @@ class PokeColumn:
     #TODO: add sampling
     #TODO: consider caching
 
-    def __init__(self, series: pd.Series):
-        if not isinstance(series, pd.Series):
-            raise TypeError(f"Expected a pandas series, but got {type(series).__name__}")
-        self.series = series
-        self.name = self.series.name
+    def __init__(self, df: pd.DataFrame, colname: Hashable):
+        if not isinstance(df, pd.DataFrame):
+            raise TypeError(f"Expected a pandas dataframe, but got {type(df).__name__}")
+        if colname not in df.columns:
+            raise KeyError(f"{colname} was not found in dataframe columns")
+        
+        self.df = df
+        self.colname = colname
 
-    # Properties ------------------------
+    #region Properties ------------------------
+
+    @property
+    def series(self) -> pd.Series:
+        if self.colname not in self.df.columns:
+            raise RuntimeError(f"Column '{self.colname}' no longer exists.")
+        return self.df[self.colname]
 
     @property
     def dtypes(self):
-        """Count of occurances of each pandas dtype in coulmn, as a series."""
+        """Count of occurances of each pandas dtype in column, as a series."""
         return self.series.dropna().map(type).value_counts()
 
     @property
@@ -77,8 +86,23 @@ class PokeColumn:
     def uniquevalues(self):
         """Count of unique values in column."""
         return len(self.series.drop_duplicates())
+    #endregion properties
 
-    # Public methods ------------------------
+    #region Setters -------------------------
+
+    @series.setter
+    def series(self, new_series: pd.Series):
+        if not isinstance(new_series, pd.Series):
+            raise TypeError("Assigned value must be a pandas Series.")
+        if len(new_series) != len(self.df):
+            raise ValueError("Length of new Series does not match DataFrame.")
+        self.df[self.colname] = new_series
+
+    #endregion setters
+
+
+
+    #region Public methods ------------------
 
     def summary(self, detailed: bool = True, display: bool = True) -> Union[bool, pd.Series]:
 
@@ -99,7 +123,7 @@ class PokeColumn:
         """
 
         output = {
-            "name": self.name,
+            "name": self.colname,
             "n_nulls": self.nullcount,
             "unique_val": self.uniquevalues,
             "most_freq_vals": self.series.value_counts().iloc[:5].index.tolist(),
@@ -188,10 +212,12 @@ class PokeColumn:
         #need to calculate and return top errors before overwriting in place if copy = False:
         top_errors = failed.value_counts().iloc[:5].index.to_list()
         if not copy:
-            self.series[:] = coerced.values
+            self.series = coerced.values
         return coerced, failed.index, top_errors
+    #endregion public methods
 
-    # Private methods ----------------
+
+    #region Private methods ----------------
 
     @staticmethod
     def _nullonfailure_wrapper(func: Callable[[object],[object]]) -> Callable [[object], [object]]:
@@ -214,3 +240,4 @@ class PokeColumn:
             except:
                 return np.nan
         return wrapper
+    #endregion private methods

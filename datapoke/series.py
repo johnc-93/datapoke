@@ -12,7 +12,7 @@ from typing import Callable, Tuple, Union, Hashable
 
 class PokeColumn:
     """
-    A wrapper for a pandas Series providing data quality profiling and safe coercion.
+    A column wrapper for a pandas dataframe providing data quality profiling and safe coercion.
 
     This class is designed to support lightweight inspection and cleaning of individual
     columns in a DataFrame. It exposes common diagnostics (nulls, uniqueness, data types),
@@ -20,15 +20,16 @@ class PokeColumn:
 
     Parameters
     ----------
-    series : pd.Series
-        The pandas Series to wrap and analyze.
+    df : pd.DataFrame
+        The pandas dataframe containing the column to wrap and analyse.
+
+    colname: Hashable
+        The column name in df.
 
     Attributes
     ----------
     series : pd.Series
-        The raw Series object.
-    name : str
-        The name of the Series.
+        The column within df as a series.
     dtypes : pd.Series
         Count of unique Python-level types in the column.
     ntypes : int

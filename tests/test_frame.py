@@ -1,8 +1,9 @@
 import pandas as pd
 from datapoke.frame import PokeFrame
 import pytest
+from pathlib import Path
 
-
+testdir = Path(__file__).parent.parent
 
 corececasenames = "copy, quarantine, expected"
 coercecases = [
@@ -14,7 +15,7 @@ coercecases = [
 
 @pytest.mark.parametrize("case", coercecases, ids= lambda c: f"copy: {c["copy"]}, quarantine: {c['quarantine']}")
 def test_coerce_quarantinesplit(case):
-    testpath = r"Test data\load tests\dtype_nulltest.csv"
+    testpath = testdir / "Test data" / "load tests" / "dtype_nulltest.csv"
     df =  PokeFrame.load_csv(testpath)
     outdf, detail = df.coerce_dtypes({"Age": "num"},copy = case["copy"], quarantine=case["quarantine"])
     assert len(df) - len(outdf) == case["lendiff"] 
@@ -22,7 +23,7 @@ def test_coerce_quarantinesplit(case):
 
 @pytest.mark.parametrize("case", coercecases, ids= lambda c: f"copy: {c["copy"]}, quarantine: {c['quarantine']}")
 def test_coerce_modifyinplace(case):
-    testpath = r"Test data\load tests\dtype_nulltest.csv"
+    testpath = testdir / "Test data" / "load tests" / "dtype_nulltest.csv"
     df =  PokeFrame.load_csv(testpath)
     originallen = len(df)
     df.coerce_dtypes({"Age": "num"},copy = case["copy"], quarantine=case["quarantine"])

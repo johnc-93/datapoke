@@ -14,7 +14,7 @@
 - Flexible handling of bad data (custom coercion functions, detailed error info)
 - Safe mode to detect index changes and enforce data integrity
 
-## Installation
+## Installation (coming soon)
 
 ```bash
 pip install datapoke

@@ -9,7 +9,7 @@ import logging
 import os
 import warnings
 from datapoke.enums import CoerceTypes
-from typing import Any, Callable, Literal, Tuple, Union, Optional
+from typing import Callable, Literal, Tuple, Union, Optional, Hashable
 
 
 class PokeFrame:
@@ -45,7 +45,10 @@ class PokeFrame:
         if not isinstance(df, pd.DataFrame):
             raise TypeError(f"Expected a pandas dataframe, but got {type(df).__name__}")
         self.df = df
-        self.columns = {col_name: PokeColumn(df, col_name) for col_name in df.columns}
+        self.columns: dict[Hashable, PokeColumn] = {}
+        for col_name in df.columns:
+            col: Hashable = col_name
+            self.columns[col] = PokeColumn(df, col)
         self._quarantine_mask = []
         self._safe_mode = safe_mode
         self._active_mask = None
@@ -58,7 +61,7 @@ class PokeFrame:
 
         Parameters
         ----------
-        col_name : str
+        col_name : Hashable
             Name of the column in the underlying dataframe.
 
         Returns
@@ -139,14 +142,18 @@ class PokeFrame:
                 self._index_hash = self._hash_index(self.df.index)
         self._safe_mode = newval
 
-    # Public methods --------------
+    # region Public methods --------------
+
+    def copy(self):
+        """Return a copy of the wrapper with a copy of the internal dataframe"""
+        return PokeFrame(self.df.copy())
 
     def coerce_dtypes(
         self,
-        schema: dict[Any, Union[CoerceTypes, Callable[[object], object]]],
+        schema: dict[Hashable, Union["CoerceTypes", str, Callable[[object], object]]],
         copy: bool = True,
         quarantine: Union[bool, Literal["detail"]] = True,
-        aggresive_bools: bool = False,
+        aggressive_bools: bool = False,
     ) -> Tuple[pd.DataFrame, dict]:
         """
         Attempt to coerce columns in the dataframe to specified types, with error handling and optional quarantining.
@@ -199,13 +206,9 @@ class PokeFrame:
         # TODO: check index hash every time we use a mask, but don't if we are just using a schema
 
         # region Validation and variable setup --------------------------
-        CoerceTypes.validate_schema(schema, self.df)
-
-        unexpected_keys = set(schema.keys()).difference(self.columns)
-        if unexpected_keys:
-            raise KeyError(
-                f"The following columns were present in the schema but not the dataframe: {unexpected_keys}"
-            )
+        validated_schema: dict[Hashable, CoerceTypes | Callable[[object], object]] = (
+            CoerceTypes.validate_schema(schema, self.df)
+        )
 
         if copy:
             new_df = self.df.copy()
@@ -216,17 +219,18 @@ class PokeFrame:
         problemrows = {}
         # c_errors tracks the top errors from each column (can't retrieve later if copy == quarantine == False)
         c_errors = {}
-
         # endregion end of: Validation and variable setup
 
         # region Try coercions ------------------------------------------
 
-        for col, dtype in schema.items():
+        for col, dtype in validated_schema.items():
             # coerce_dtypes on pokecolumn is only called with copy = False if copy and quarantine are false
             # on pokeframe.coerce_dtypes - this is the only case where we want to modify the underlying values.
             try:
                 coerced, failed, top_errors = self.columns[col].coerce_dtypes(
-                    dtype, copy=bool(copy or quarantine)
+                    dtype,
+                    copy=bool(copy or quarantine),
+                    aggressive_bools=aggressive_bools,
                 )
             except ValueError:
                 logging.warning(f"Failed coercion in column {col} to type {dtype}")
@@ -243,8 +247,8 @@ class PokeFrame:
                 new_df[col] = coerced
             elif quarantine is True:
                 # if quarantining but not copying, only update succesful coercions:
-                mask = ~new_df.index.isin(failed)
-                new_df.loc[mask, col] = coerced.loc[mask]
+                mask: pd.Index[int] = new_df.index.difference(failed)
+                new_df.loc[mask, col] = coerced.loc[mask]  # type: ignore
 
             if not failed.empty:
                 logging.warning(
@@ -252,7 +256,6 @@ class PokeFrame:
                 )
                 problemrows[col] = failed
                 c_errors[col] = top_errors
-
         outdict = {"summary": None, "coerce_errors": problemrows}
         # qindex is the index of any coercion errors
         qindex = (
@@ -263,9 +266,7 @@ class PokeFrame:
 
         # endregion end of: Try coercions
 
-        # region Handle coercion failures -------------------------------
-
-        #   region Setup quarantine output if needed--------------------
+        # region Setup quarantine output if needed--------------------
 
         if quarantine and problemrows:
             # qdf isn't a copy - so should be efficient, only needed for function return
@@ -292,7 +293,7 @@ class PokeFrame:
         if quarantine:
             self.quarantine_mask = new_df.index.intersection(qindex)
 
-        #   endregion: setup quarantine output if needed
+        # endregion: setup quarantine output if needed
 
         # region Setup outputs ------------------------------------------
 
@@ -308,7 +309,7 @@ class PokeFrame:
             else:
                 errs = [len(problemrows[sk]), c_errors[sk]]
             convname = "func: " + sv.__name__ if isinstance(sv, Callable) else sv
-            od.update({"colerr_" + sk: [convname] + errs})
+            od.update({"colerr_" + str(sk): [convname] + errs})
         outdict["summary"] = pd.DataFrame.from_dict(
             od, orient="index", columns=["covert_to", "count", "most_freq_errors"]
         )
@@ -317,7 +318,7 @@ class PokeFrame:
 
         # if we are quarantining, only return successful rows
         if quarantine:
-            return new_df.loc[new_df.index.isin(self.quarantine_mask)], outdict
+            return new_df.loc[~new_df.index.isin(self.quarantine_mask)], outdict
         else:
             return new_df, outdict
 
@@ -335,7 +336,8 @@ class PokeFrame:
             output.append(column.summary(detailed=False))
         return pd.DataFrame(output)
 
-    # Private methods -------------------
+    # endregion public methods
+    # region Private methods -------------------
 
     @staticmethod
     def _hash_index(index: pd.Index) -> int:
@@ -384,7 +386,8 @@ class PokeFrame:
                 "Dataframe index has changed since initialisation, methods involving row selection cannot be completed unless the index is reverted or the dataframe is reloaded"
             )
 
-    # Static & Class methods -------------
+    # endregion private methods
+    # region Static & Class methods -------------
 
     @classmethod
     def load_csv(
@@ -479,3 +482,5 @@ class PokeFrame:
         raise ValueError(
             f"Tried the following encodings: {encodings_totry}, was unable to decode {filepath}."
         ) from last_exception
+
+    # endregion : end of static and class methods

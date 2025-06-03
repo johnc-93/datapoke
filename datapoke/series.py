@@ -144,7 +144,7 @@ class PokeColumn:
         self,
         target_dtype: Union[CoerceTypes, Callable[[object], object]],
         copy: bool = False,
-        aggresive_bools: bool = False,
+        aggressive_bools: bool = False,
     ) -> Tuple[pd.Series, pd.Index, list]:
         """
         Attempt to coerce the column to a specified data type, handling failures safely.
@@ -194,10 +194,10 @@ class PokeColumn:
             coerced = self.series.map(self._nullonfailure_wrapper(target_dtype))
         else:
             converter = {
-                "num": pd.to_numeric,
-                "datetime": pd.to_datetime,
-                "bool": lambda x: x.astype("boolean"),
-                "string": lambda x: x.astype("string"),
+                CoerceTypes.NUM: pd.to_numeric,
+                CoerceTypes.DATETIME: pd.to_datetime,
+                CoerceTypes.BOOL: lambda x: x.astype("boolean"),
+                CoerceTypes.STRING: lambda x: x.astype("string"),
             }.get(target_dtype)
 
             if converter is None:
@@ -206,9 +206,9 @@ class PokeColumn:
                 )
 
             try:
-                if target_dtype in ["num", "datetime"]:
+                if target_dtype in [CoerceTypes.NUM, CoerceTypes.DATETIME]:
                     coerced = converter(self.series, errors="coerce")
-                elif target_dtype == "boolean" and aggresive_bools:
+                elif target_dtype == CoerceTypes.BOOL and aggressive_bools:
                     coerced = self.series.map(force_boolcast).astype("boolean")
                 else:
                     coerced = converter(self.series)

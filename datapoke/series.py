@@ -9,7 +9,6 @@ import functools
 from typing import Callable, Tuple, Union, Hashable
 
 
-
 class PokeColumn:
     """
     A column wrapper for a pandas dataframe providing data quality profiling and safe coercion.
@@ -46,21 +45,22 @@ class PokeColumn:
     coerce_dtypes(target_dtype, copy=False)
         Attempts to coerce the column to a new type or callable function safely.
     """
-    #TODO: write a __repr__ method
-    #TODO: optimise duplicate function calls
-    #TODO: add sampling
-    #TODO: consider caching
+
+    # TODO: write a __repr__ method
+    # TODO: optimise duplicate function calls
+    # TODO: add sampling
+    # TODO: consider caching
 
     def __init__(self, df: pd.DataFrame, colname: Hashable):
         if not isinstance(df, pd.DataFrame):
             raise TypeError(f"Expected a pandas dataframe, but got {type(df).__name__}")
         if colname not in df.columns:
             raise KeyError(f"{colname} was not found in dataframe columns")
-        
+
         self.df = df
         self.colname = colname
 
-    #region Properties ------------------------
+    # region Properties ------------------------
 
     @property
     def series(self) -> pd.Series:
@@ -87,9 +87,10 @@ class PokeColumn:
     def uniquevalues(self):
         """Count of unique values in column."""
         return len(self.series.drop_duplicates())
-    #endregion properties
 
-    #region Setters -------------------------
+    # endregion properties
+
+    # region Setters -------------------------
 
     @series.setter
     def series(self, new_series: pd.Series):
@@ -99,14 +100,13 @@ class PokeColumn:
             raise ValueError("Length of new Series does not match DataFrame.")
         self.df[self.colname] = new_series
 
-    #endregion setters
+    # endregion setters
 
+    # region Public methods ------------------
 
-
-    #region Public methods ------------------
-
-    def summary(self, detailed: bool = True, display: bool = True) -> Union[bool, pd.Series]:
-
+    def summary(
+        self, detailed: bool = True, display: bool = True
+    ) -> Union[bool, pd.Series]:
         """
         Return a summary of data quality for the column.
 
@@ -129,17 +129,23 @@ class PokeColumn:
             "unique_val": self.uniquevalues,
             "most_freq_vals": self.series.value_counts().iloc[:5].index.tolist(),
             "dtypes": {t.__name__ for t in self.dtypes.index},
-            "n_types":  self.ntypes
+            "n_types": self.ntypes,
         }
         if detailed:
-            output.update({"n_" + key.__name__: value for key, value in self.dtypes.items()})
+            output.update(
+                {"n_" + key.__name__: value for key, value in self.dtypes.items()}
+            )
         if display:
             return pd.Series(output)
         else:
             return output
 
-    def coerce_dtypes(self,target_dtype: Union[CoerceTypes, Callable[[object], object]], copy: bool = False, aggresive_bools: bool = False) -> Tuple[pd.Series, pd.Index, list]:
-
+    def coerce_dtypes(
+        self,
+        target_dtype: Union[CoerceTypes, Callable[[object], object]],
+        copy: bool = False,
+        aggresive_bools: bool = False,
+    ) -> Tuple[pd.Series, pd.Index, list]:
         """
         Attempt to coerce the column to a specified data type, handling failures safely.
 
@@ -180,10 +186,9 @@ class PokeColumn:
         If passing a function as target_dtype, application is via pd.Series.map().
         """
 
-        #TODO: add handling for ints vs. floats
-        #TODO: add handling for unusual pandas categories
-        #TODO: add docstring
-        #TODO: optimise failed memory usage a bit more
+        # TODO: add handling for ints vs. floats
+        # TODO: add handling for unusual pandas categories
+        # TODO: optimise failed memory usage a bit more
 
         if isinstance(target_dtype, Callable):
             coerced = self.series.map(self._nullonfailure_wrapper(target_dtype))
@@ -192,36 +197,42 @@ class PokeColumn:
                 "num": pd.to_numeric,
                 "datetime": pd.to_datetime,
                 "bool": lambda x: x.astype("boolean"),
-                "string": lambda x: x.astype("string")
+                "string": lambda x: x.astype("string"),
             }.get(target_dtype)
 
             if converter is None:
-                raise ValueError(f"Unsupported type: {target_dtype}. Currently supported types are: num, datetime, bool, string.")
+                raise ValueError(
+                    f"Unsupported type: {target_dtype}. Currently supported types are: num, datetime, bool, string."
+                )
 
             try:
-                if target_dtype in ["num","datetime"]:
+                if target_dtype in ["num", "datetime"]:
                     coerced = converter(self.series, errors="coerce")
                 elif target_dtype == "boolean" and aggresive_bools:
-                        coerced = self.series.map(aggresive_bools).astype("boolean")
+                    coerced = self.series.map(force_boolcast).astype("boolean")
                 else:
                     coerced = converter(self.series)
 
             except Exception as e:
-                raise ValueError(f"Failed to coerce column '{self.name}' to {target_dtype}: {e}")
+                raise ValueError(
+                    f"Failed to coerce column '{self.name}' to {target_dtype}: {e}"
+                )
 
         failed = self.series[coerced.isna() & self.series.notna()]
-        #need to calculate and return top errors before overwriting in place if copy = False:
+        # need to calculate and return top errors before overwriting in place if copy = False:
         top_errors = failed.value_counts().iloc[:5].index.to_list()
         if not copy:
             self.series = coerced
         return coerced, failed.index, top_errors
-    #endregion public methods
 
+    # endregion public methods
 
-    #region Private methods ----------------
+    # region Private methods ----------------
 
     @staticmethod
-    def _nullonfailure_wrapper(func: Callable[[object],[object]]) -> Callable [[object], [object]]:
+    def _nullonfailure_wrapper(
+        func: Callable[[object], [object]],
+    ) -> Callable[[object], [object]]:
         """Wraps a user defined function to return np.nan if there is an error.
 
         Parameters
@@ -234,11 +245,14 @@ class PokeColumn:
         wrapper: Callable
             Wrapped version of func.
         """
+
         @functools.wraps(func)
         def wrapper(x):
             try:
                 return func(x)
-            except:
+            except Exception:
                 return np.nan
+
         return wrapper
-    #endregion private methods
+
+    # endregion private methods

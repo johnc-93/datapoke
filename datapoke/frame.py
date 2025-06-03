@@ -33,12 +33,9 @@ class PokeFrame:
 
     # TODO: add testing for single column data - ie. what if you throw a series in to pokeframe
     # TODO: different output types - ie. not just console
-    # TODO: add docstrings
     # TODO: finish typing
-    # TODO: integrate read_csv
     # TODO: lookat pypi setup
     # TODO: more info on null distribution
-    # TODO: add testing
     # TODO: consider multiindexes if passed directly...
 
     def __init__(self, df: pd.DataFrame, safe_mode: bool = True):
@@ -77,7 +74,7 @@ class PokeFrame:
     def __len__(self):
         return len(self.df)
 
-    # Properties -----------------------------
+    # region Properties -----------------------------
     @property
     def index_hash(self):
         """Hash of dataframe index."""
@@ -113,8 +110,9 @@ class PokeFrame:
             Dictionary of column names and their dtypes.
         """
         return self.df.dtypes.to_dict()
+    # endregion properties
 
-    # Setters ----------------------------------
+    # region Setters ----------------------------------
 
     @quarantine_mask.setter
     def quarantine_mask(self, new_mask):
@@ -141,6 +139,7 @@ class PokeFrame:
             if newval:
                 self._index_hash = self._hash_index(self.df.index)
         self._safe_mode = newval
+    # endregion setters 
 
     # region Public methods --------------
 
@@ -174,6 +173,14 @@ class PokeFrame:
             and returned separately. If 'detail', adds a column noting which columns failed.
             The quarantine_mask property will also be updated to track failed coercions.
             If False, all rows are retained regardless of coercion outcome.
+        aggressive_bools : bool, optional
+            If False (default), will use standard pandas bool conversion. If True, uses an
+            expanded set of conversions:
+                - Strings: 'true', 'false', '1', '0' (case- and whitespace-insensitive)
+                - Numbers: 0 is False, any other number is True
+                - Booleans: returned as-is
+                - Null-like values (None, np.nan): returns np.nan
+            Any other type (e.g. dict, list, unrecognized string) returns np.nan.
 
         Returns
         -------
@@ -337,6 +344,7 @@ class PokeFrame:
         return pd.DataFrame(output)
 
     # endregion public methods
+
     # region Private methods -------------------
 
     @staticmethod
@@ -387,6 +395,7 @@ class PokeFrame:
             )
 
     # endregion private methods
+   
     # region Static & Class methods -------------
 
     @classmethod

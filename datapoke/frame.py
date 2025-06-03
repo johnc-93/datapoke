@@ -9,7 +9,7 @@ import logging
 import os
 import warnings
 from datapoke.enums import CoerceTypes
-from typing import Any, Callable, Literal, Tuple, Union
+from typing import Any, Callable, Literal, Tuple, Union, Optional
 
 
 class PokeFrame:
@@ -226,7 +226,7 @@ class PokeFrame:
             # on pokeframe.coerce_dtypes - this is the only case where we want to modify the underlying values.
             try:
                 coerced, failed, top_errors = self.columns[col].coerce_dtypes(
-                    dtype, copy=(copy or quarantine)
+                    dtype, copy=bool(copy or quarantine)
                 )
             except ValueError:
                 logging.warning(f"Failed coercion in column {col} to type {dtype}")
@@ -236,7 +236,7 @@ class PokeFrame:
                         "Any columns processed before this point may have been modified",
                         RuntimeWarning,
                     )
-                    raise
+                raise
             # handle update of new_df:
             if copy:
                 # new_df needs to be modified in place:
@@ -278,6 +278,7 @@ class PokeFrame:
                     )
                 qdf["coerce_errors"] = ""
                 for k, v in problemrows.items():
+                    v: pd.Index
                     qdf.loc[v, "coerce_errors"] = qdf.loc[v, "coerce_errors"].map(
                         lambda x: ", ".join([x, k]) if x else k
                     )
@@ -289,7 +290,7 @@ class PokeFrame:
 
         # set quarantine mask if quarantine != False
         if quarantine:
-            self.quarantine_mask = new_df.index.isin(qindex)
+            self.quarantine_mask = new_df.index.intersection(qindex)
 
         #   endregion: setup quarantine output if needed
 
@@ -316,7 +317,7 @@ class PokeFrame:
 
         # if we are quarantining, only return successful rows
         if quarantine:
-            return new_df.loc[~self.quarantine_mask], outdict
+            return new_df.loc[new_df.index.isin(self.quarantine_mask)], outdict
         else:
             return new_df, outdict
 
@@ -389,7 +390,7 @@ class PokeFrame:
     def load_csv(
         cls,
         filepath: Union[str, os.PathLike],
-        encoding: str = None,
+        encoding: Optional[str] = None,
         safe_mode: bool = True,
         **kwargs,
     ):
@@ -458,7 +459,7 @@ class PokeFrame:
                 encodings_totry.append(enc)
 
         fallback_needed = False
-        last_exception = False
+        last_exception: Optional[BaseException] = None
 
         for enc in encodings_totry:
             try:

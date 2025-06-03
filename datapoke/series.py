@@ -106,7 +106,7 @@ class PokeColumn:
 
     def summary(
         self, detailed: bool = True, display: bool = True
-    ) -> Union[bool, pd.Series]:
+    ) -> Union[dict, pd.Series]:
         """
         Return a summary of data quality for the column.
 
@@ -215,7 +215,7 @@ class PokeColumn:
 
             except Exception as e:
                 raise ValueError(
-                    f"Failed to coerce column '{self.name}' to {target_dtype}: {e}"
+                    f"Failed to coerce column '{self.colname}' to {target_dtype}: {e}"
                 )
 
         failed = self.series[coerced.isna() & self.series.notna()]
@@ -231,8 +231,8 @@ class PokeColumn:
 
     @staticmethod
     def _nullonfailure_wrapper(
-        func: Callable[[object], [object]],
-    ) -> Callable[[object], [object]]:
+        func: Callable[[object], object],
+    ) -> Callable[[object], object]:
         """Wraps a user defined function to return np.nan if there is an error.
 
         Parameters

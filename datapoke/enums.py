@@ -3,6 +3,7 @@ import pandas as pd
 
 import inspect
 from enum import Enum
+from typing import Hashable, Callable, Union
 
 
 class CoerceTypes(str, Enum):
@@ -32,15 +33,23 @@ class CoerceTypes(str, Enum):
         return False
 
     @classmethod
-    def validate_schema(cls, schema: dict, df: pd.DataFrame) -> None:
+    def validate_schema(
+        cls,
+        schema: dict[Hashable, Union["CoerceTypes", str, Callable[[object], object]]],
+        df: pd.DataFrame,
+    ) -> dict[Hashable, "CoerceTypes" | Callable[[object], object]]:
         unexpected_keys = set(schema.keys()).difference(df.columns)
         if unexpected_keys:
             raise KeyError(
                 f"The following columns were present in the schema but not the dataframe: {unexpected_keys}"
             )
-
-        invalid_target = {k: v for k, v in schema.items() if not cls.is_valid(v)}
-        if invalid_target:
-            raise ValueError(
-                f"Unsupported type mappings in schema: {invalid_target}. Currently supported types are: {cls.values()} or a callable with one argument"
-            )
+        validated_schema = dict()
+        for k, v in schema.items():
+            if cls.is_valid(v):
+                if not callable(v):
+                    validated_schema[k] = cls(v)
+            else:
+                raise ValueError(
+                    f"Unsupported type mappings in schema: {v}. Currently supported types are: {cls.values()} or a callable with one argument"
+                )
+        return validated_schema

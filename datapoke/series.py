@@ -106,7 +106,7 @@ class PokeColumn:
 
     def summary(
         self, detailed: bool = True, display: bool = True
-    ) -> Union[bool, pd.Series]:
+    ) -> Union[dict, pd.Series]:
         """
         Return a summary of data quality for the column.
 
@@ -144,7 +144,7 @@ class PokeColumn:
         self,
         target_dtype: Union[CoerceTypes, Callable[[object], object]],
         copy: bool = False,
-        aggresive_bools: bool = False,
+        aggressive_bools: bool = False,
     ) -> Tuple[pd.Series, pd.Index, list]:
         """
         Attempt to coerce the column to a specified data type, handling failures safely.
@@ -194,10 +194,10 @@ class PokeColumn:
             coerced = self.series.map(self._nullonfailure_wrapper(target_dtype))
         else:
             converter = {
-                "num": pd.to_numeric,
-                "datetime": pd.to_datetime,
-                "bool": lambda x: x.astype("boolean"),
-                "string": lambda x: x.astype("string"),
+                CoerceTypes.NUM: pd.to_numeric,
+                CoerceTypes.DATETIME: pd.to_datetime,
+                CoerceTypes.BOOL: lambda x: x.astype("boolean"),
+                CoerceTypes.STRING: lambda x: x.astype("string"),
             }.get(target_dtype)
 
             if converter is None:
@@ -206,16 +206,16 @@ class PokeColumn:
                 )
 
             try:
-                if target_dtype in ["num", "datetime"]:
+                if target_dtype in [CoerceTypes.NUM, CoerceTypes.DATETIME]:
                     coerced = converter(self.series, errors="coerce")
-                elif target_dtype == "boolean" and aggresive_bools:
+                elif target_dtype == CoerceTypes.BOOL and aggressive_bools:
                     coerced = self.series.map(force_boolcast).astype("boolean")
                 else:
                     coerced = converter(self.series)
 
             except Exception as e:
                 raise ValueError(
-                    f"Failed to coerce column '{self.name}' to {target_dtype}: {e}"
+                    f"Failed to coerce column '{self.colname}' to {target_dtype}: {e}"
                 )
 
         failed = self.series[coerced.isna() & self.series.notna()]
@@ -231,8 +231,8 @@ class PokeColumn:
 
     @staticmethod
     def _nullonfailure_wrapper(
-        func: Callable[[object], [object]],
-    ) -> Callable[[object], [object]]:
+        func: Callable[[object], object],
+    ) -> Callable[[object], object]:
         """Wraps a user defined function to return np.nan if there is an error.
 
         Parameters

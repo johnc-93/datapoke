@@ -4,3 +4,6 @@ old*
 *__pycache__*
 startup.py
 old_frame.py
+docs/build/*
+docs/Makefile
+docs/make.bat

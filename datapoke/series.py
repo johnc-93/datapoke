@@ -29,14 +29,6 @@ class PokeColumn:
     ----------
     series : pd.Series
         The column within df as a series.
-    dtypes : pd.Series
-        Count of unique Python-level types in the column.
-    ntypes : int
-        Number of unique Python types in the column.
-    nullcount : int
-        Number of null values in the column.
-    uniquevalues : int
-        Number of unique values in the column.
 
     Methods
     -------
@@ -153,6 +145,7 @@ class PokeColumn:
         ----------
         target_dtype : str or Callable
             The target type to convert to. Must be one of the following strings:
+
             - 'num' for numeric conversion via `pd.to_numeric`
             - 'datetime' for datetime conversion via `pd.to_datetime`
             - 'bool' for pandas' nullable boolean type

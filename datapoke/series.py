@@ -19,7 +19,7 @@ class PokeColumn:
 
     Parameters
     ----------
-    df : pd.DataFrame
+    df : pandas.DataFrame
         The pandas dataframe containing the column to wrap and analyse.
 
     colname: Hashable
@@ -27,15 +27,10 @@ class PokeColumn:
 
     Attributes
     ----------
-    series : pd.Series
+    series : pandas.Series
         The column within df as a series.
-
-    Methods
-    -------
-    summary(detailed=True, display=True)
-        Returns a summary of column quality information.
-    coerce_dtypes(target_dtype, copy=False)
-        Attempts to coerce the column to a new type or callable function safely.
+    colname : Hashable
+        The column name in df.
     """
 
     # TODO: write a __repr__ method
@@ -111,7 +106,7 @@ class PokeColumn:
 
         Returns
         -------
-        summary: dict or pd.Series
+        summary: dict or pandas.Series
             Column metadata summary.
         """
 
@@ -145,7 +140,7 @@ class PokeColumn:
         ----------
         target_dtype : str or Callable
             The target type to convert to. Must be one of the following strings:
-
+            
             - 'num' for numeric conversion via `pd.to_numeric`
             - 'datetime' for datetime conversion via `pd.to_datetime`
             - 'bool' for pandas' nullable boolean type
@@ -159,7 +154,7 @@ class PokeColumn:
 
         Returns
         -------
-        coerced : pd.Series
+        coerced : pandas.Series
             The Series after attempting type coercion. Failed conversions will be NaN.
         failed_rows : pd.Index
             Index of rows where coercion failed (original value was non-null, result is NaN).
@@ -176,7 +171,7 @@ class PokeColumn:
         This function does not distinguish between float and int coercion at this stage.
         All numeric conversions default to float for compatibility with missing values.
 
-        If passing a function as target_dtype, application is via pd.Series.map().
+        If passing a function as target_dtype, application is via pandas.Series.map().
         """
 
         # TODO: add handling for ints vs. floats

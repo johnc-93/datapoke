@@ -1,4 +1,5 @@
-from datapoke.series import PokeColumn
+from __future__ import annotations
+from .series import PokeColumn
 
 
 import pandas as pd
@@ -24,7 +25,7 @@ class PokeFrame:
 
     Parameters
     ----------
-    df : pd.DataFrame
+    df : :py:class:`pandas.DataFrame`
         The dataframe to wrap and inspect.
     safe_mode : bool, optional
         If True (default), tracks the index at load time to validate changes and
@@ -32,10 +33,10 @@ class PokeFrame:
         
     Attributes
     ----------
-    df : pd.DataFrame
+    df : :py:class:`pandas.DataFrame`
         The underlying pandas DataFrame wrapped by the PokeFrame class.
-    columns : dict[Hashable, datapoke.PokeColumn]
-        A PokeColumn object for each column in df, stored in a dictionary with the column names as keys.
+    columns : dict[Hashable, PokeColumn]
+        A :py:class:`PokeColumn` object for each column in df, stored in a dictionary with the column names as keys.
     """
 
     # TODO: add testing for single column data - ie. what if you throw a series in to pokeframe
@@ -50,7 +51,7 @@ class PokeFrame:
         if not isinstance(df, pd.DataFrame):
             raise TypeError(f"Expected a pandas dataframe, but got {type(df).__name__}")
         self.df: pd.DataFrame = df
-        self.columns: dict[Hashable, PokeColumn] = {}
+        self.columns: dict[Hashable, "PokeColumn"] = {}
         for col_name in df.columns:
             col: Hashable = col_name
             self.columns[col] = PokeColumn(df, col)
@@ -146,7 +147,7 @@ class PokeFrame:
 
     # region Public methods --------------
 
-    def copy(self) -> "datapoke.PokeFrame":
+    def copy(self) -> "PokeFrame":
         """Return a copy of the wrapper with a copy of the internal dataframe"""
         return PokeFrame(self.df.copy())
 
@@ -172,7 +173,7 @@ class PokeFrame:
                 - If True (default), operate on a copy of the dataframe and return it.
                 - If False, coercions are performed in-place on the original dataframe. If quarantine is also False, failed coercions will be written to the dataframe as NaN, otherwise they will be left as the original values.
 
-        quarantine : bool or {'detail'}, optional
+        quarantine : bool or ``detail``, optional
             - If True (default), rows with failed conversions are removed from the result and returned separately. If 'detail', adds a column noting which columns failed. The quarantine_mask property will also be updated to track failed coercions.
             - If False, all rows are retained regardless of coercion outcome.
         aggressive_bools : bool, optional
@@ -188,14 +189,14 @@ class PokeFrame:
 
         Returns
         -------
-        new_df : pd.DataFrame
+        new_df : :py:class:`pandas.DataFrame`
             The coerced dataframe, potentially with problematic rows removed if quarantining is enabled.
         output : dict
             A dictionary containing:
 
-            - 'summary': pd.DataFrame with per-column coercion results
+            - 'summary': :py:class:`pandas.DataFrame` with per-column coercion results
             - 'coerce_errors': dict of column -> failed row indices
-            - 'quarantine' (if enabled): pd.DataFrame of quarantined rows
+            - 'quarantine' (if enabled): :py:class:`pandas.DataFrame` of quarantined rows
 
         Raises
         ------
@@ -341,7 +342,7 @@ class PokeFrame:
 
         Returns
         -------
-        pd.DataFrame
+        :py:class:`pandas.DataFrame`
             A dataframe where each row summarizes a column's quality metrics.
         """
         output = []
@@ -403,6 +404,33 @@ class PokeFrame:
     # endregion private methods
    
     # region Static & Class methods -------------
+    @classmethod
+    def load_excel(
+        cls,
+        filepath: Union[str, os.PathLike],
+        safe_mode: bool = True,
+        **kwargs,
+    ) -> "PokeFrame":
+        """Load an xlsx and return a new PokeFrame instance, uses the pandas load_excel function.
+        
+        Parameters
+        ----------
+        filepath: str or Path
+            Path to excel file.
+        safe_mode: bool, optional
+            Config option for the PokeFrame object, see datapoke.PokeFrame for more information.
+        **kwargs: dict, optional
+            Additional arguments to pass to `pandas.read_excel()` (eg. `skiprows`, `header`).
+
+        Returns
+        -------
+        PokeFrame
+            A new instance of PokeFrame containing the loaded dataframe.
+        """
+        df = pd.read_excel(filepath, **kwargs)
+        return cls(df, safe_mode = safe_mode)
+
+
 
     @classmethod
     def load_csv(
@@ -411,7 +439,7 @@ class PokeFrame:
         encoding: Optional[str] = None,
         safe_mode: bool = True,
         **kwargs,
-    ) -> "datapoke.PokeFrame":
+    ) -> "PokeFrame":
         """Load a csv and return a new PokeFrame instance. Will try specified encoding (if supplied), and common fallback options, including BOM type encodings.
 
         Parameters
@@ -420,6 +448,8 @@ class PokeFrame:
             Path to CSV file.
         encoding: str, optional
             Encoding to try first (eg. utf-8), if not provided, a range of common encodings will be tried (including BOM encodings).
+        safe_mode: bool, optional
+            Config option for the PokeFrame object, see datapoke.PokeFrame for more information.
         **kwargs: dict, optional
             Additional arguments to pass to `pandas.read_csv()` (eg. `skiprows`, `header`).
 

@@ -8,9 +8,9 @@ Datapoke documentation
 
 
 .. toctree::
-   usage
    api_reference
-   :maxdepth: 2
+   usage
+   :maxdepth: 1
    :caption: Contents:
 
 

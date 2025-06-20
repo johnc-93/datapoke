@@ -5,6 +5,16 @@ from datapoke.enums import CoerceTypes
 
 testdir = Path(__file__).parent.parent
 
+
+
+#region test excel import
+
+def test_excelimport():
+    testpath = testdir / "Test data" / "load tests" / "MixedTypeDataTable.xlsx"
+    df = PokeFrame.load_excel(testpath)
+
+# region csv coercion tests
+
 corececasenames = "copy, quarantine, expected"
 coercecases = [
     {"copy": False, "quarantine": False, "lendiff": 0, "expected_agetype": {"float"}},
@@ -18,44 +28,12 @@ coercecases = [
     {"copy": True, "quarantine": True, "lendiff": 1, "expected_agetype": {"str"}},
 ]
 
-
 @pytest.fixture
 def null_testfile():
     testpath = testdir / "Test data" / "load tests" / "dtype_nulltest.csv"
     df = PokeFrame.load_csv(testpath)
     return df
 
-
-@pytest.mark.parametrize(
-    "case",
-    coercecases,
-    ids=lambda c: f"copy: {c['copy']}, quarantine: {c['quarantine']}",
-)
-def test_coerce_quarantinesplit(case):
-    testpath = testdir / "Test data" / "load tests" / "dtype_nulltest.csv"
-    df = PokeFrame.load_csv(testpath)
-    outdf, detail = df.coerce_dtypes(
-        {"Age": CoerceTypes.NUM}, copy=case["copy"], quarantine=case["quarantine"]
-    )
-    assert len(df) - len(outdf) == case["lendiff"]
-    assert len(detail["quarantine"]) == case["lendiff"]
-
-
-@pytest.mark.parametrize(
-    "case",
-    coercecases,
-    ids=lambda c: f"copy: {c['copy']}, quarantine: {c['quarantine']}",
-)
-def test_coerce_modifyinplace(case):
-    testpath = testdir / "Test data" / "load tests" / "dtype_nulltest.csv"
-    df = PokeFrame.load_csv(testpath)
-    originallen = len(df)
-    df.coerce_dtypes(
-        {"Age": CoerceTypes.NUM}, copy=case["copy"], quarantine=case["quarantine"]
-    )
-    assert originallen == len(df)
-    sum = df.summary()
-    assert sum.loc[sum["name"] == "Age", "dtypes"].squeeze() == case["expected_agetype"]
 
 
 @pytest.mark.parametrize(
@@ -70,7 +48,6 @@ def test_coerce_modifyinplace(case):
 def test_coerce_inputs(input_dtype, enumed_dtype, null_testfile):
     schema = CoerceTypes.validate_schema({"Age": input_dtype}, null_testfile)
     assert schema["Age"] == enumed_dtype
-
 
 @pytest.mark.parametrize(
     "case",
@@ -120,3 +97,38 @@ def test_schema_ref_errors(null_testfile):
     """check for key errors on schema columns that don't exist in df"""
     with pytest.raises(KeyError):
         CoerceTypes.validate_schema({"Honk": "num"}, null_testfile)
+
+
+@pytest.mark.parametrize(
+    "case",
+    coercecases,
+    ids=lambda c: f"copy: {c['copy']}, quarantine: {c['quarantine']}",
+)
+def test_coerce_quarantinesplit(case):
+    testpath = testdir / "Test data" / "load tests" / "dtype_nulltest.csv"
+    df = PokeFrame.load_csv(testpath)
+    outdf, detail = df.coerce_dtypes(
+        {"Age": CoerceTypes.NUM}, copy=case["copy"], quarantine=case["quarantine"]
+    )
+    assert len(df) - len(outdf) == case["lendiff"]
+    assert len(detail["quarantine"]) == case["lendiff"]
+
+
+@pytest.mark.parametrize(
+    "case",
+    coercecases,
+    ids=lambda c: f"copy: {c['copy']}, quarantine: {c['quarantine']}",
+)
+def test_coerce_modifyinplace(case):
+    testpath = testdir / "Test data" / "load tests" / "dtype_nulltest.csv"
+    df = PokeFrame.load_csv(testpath)
+    originallen = len(df)
+    df.coerce_dtypes(
+        {"Age": CoerceTypes.NUM}, copy=case["copy"], quarantine=case["quarantine"]
+    )
+    assert originallen == len(df)
+    sum = df.summary()
+    assert sum.loc[sum["name"] == "Age", "dtypes"].squeeze() == case["expected_agetype"]
+
+
+#endregion CSV coercion tests
